@@ -4,6 +4,33 @@
   
   
   <entry>
+    <title>[踩坑]std::pow 与 std::cbrt</title>
+    <link href="/2025/03/26/%E8%B8%A9%E5%9D%91-sqrt%E4%B8%8Ecbrt/"/>
+    <url>/2025/03/26/%E8%B8%A9%E5%9D%91-sqrt%E4%B8%8Ecbrt/</url>
+    
+    <content type="html"><![CDATA[<h2 id="引入">引入</h2><p>求一元三次方程的根的时候，要涉及求三次方根的问题，最开始我是这么写的：</p><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs cpp">u = std::<span class="hljs-built_in">pow</span>(-Q/<span class="hljs-number">2</span> + std::<span class="hljs-built_in">sqrt</span>(delta), <span class="hljs-number">1.f</span> / <span class="hljs-number">3</span>)<br></code></pre></td></tr></table></figure><p>结果发现出来一堆 <code>nan</code>。</p><h2 id="分析">分析</h2><p>参考 <a href="https://en.cppreference.com/w/cpp/numeric/math/cbrt">cppreference</a> 上面的介绍</p><blockquote><p>std::cbrt(num) is not equivalent to std::pow(num, 1.0 / 3) because the rational number 13 is typically not equal to 1.0 / 3 and std::pow cannot raise a negative base to a fractional exponent. Moreover, std::cbrt(num) usually gives more accurate results than std::pow(num, 1.0 / 3) (see example).</p></blockquote><p>（本想分析一下源代码的，后来发现 <code>libc++</code> 和 <code>libstdc++</code> 里面都直接 <code>__builtin_cbrt</code> 了，找了一圈找不到具体实现，于是作罢）</p><p>只能说还是要多看文档呀。</p><h2 id="解决">解决</h2><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs cpp">u = std::<span class="hljs-built_in">cbrt</span>(-Q/<span class="hljs-number">2</span> + std::<span class="hljs-built_in">sqrt</span>(delta))<br></code></pre></td></tr></table></figure>]]></content>
+    
+    
+    <categories>
+      
+      <category>笔记</category>
+      
+      <category>踩坑</category>
+      
+    </categories>
+    
+    
+    <tags>
+      
+      <tag>C++</tag>
+      
+    </tags>
+    
+  </entry>
+  
+  
+  
+  <entry>
     <title>rCore 学习笔记 - 第三章</title>
     <link href="/2025/03/01/rCore-0x03/"/>
     <url>/2025/03/01/rCore-0x03/</url>
