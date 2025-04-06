@@ -6,7 +6,7 @@
   <link href="http://xiao-h.com/atom.xml" rel="self"/>
   
   <link href="http://xiao-h.com/"/>
-  <updated>2025-03-26T11:08:42.255Z</updated>
+  <updated>2025-04-02T01:05:45.145Z</updated>
   <id>http://xiao-h.com/</id>
   
   <author>
@@ -17,11 +17,11 @@
   <generator uri="https://hexo.io/">Hexo</generator>
   
   <entry>
-    <title>[踩坑]std::pow 与 std::cbrt</title>
+    <title>[踩坑] std::pow 与 std::cbrt</title>
     <link href="http://xiao-h.com/2025/03/26/%E8%B8%A9%E5%9D%91-sqrt%E4%B8%8Ecbrt/"/>
     <id>http://xiao-h.com/2025/03/26/%E8%B8%A9%E5%9D%91-sqrt%E4%B8%8Ecbrt/</id>
     <published>2025-03-26T06:31:54.000Z</published>
-    <updated>2025-03-26T11:08:42.255Z</updated>
+    <updated>2025-04-02T01:05:45.145Z</updated>
     
     
     <summary type="html">求立方根的时候不要用 pow！！！</summary>
@@ -142,7 +142,7 @@
     <link href="http://xiao-h.com/2025/01/22/Abseil-0x02-%E5%AE%B9%E5%99%A8/"/>
     <id>http://xiao-h.com/2025/01/22/Abseil-0x02-%E5%AE%B9%E5%99%A8/</id>
     <published>2025-01-22T11:49:09.000Z</published>
-    <updated>2025-03-01T14:34:04.560Z</updated>
+    <updated>2025-04-06T13:52:25.404Z</updated>
     
     
     <summary type="html">Abseil 源码阅读第 2 期，容器</summary>
