@@ -4,38 +4,11 @@
   
   
   <entry>
-    <title>[踩坑] std::pow 与 std::cbrt</title>
-    <link href="/2025/03/26/%E8%B8%A9%E5%9D%91-sqrt%E4%B8%8Ecbrt/"/>
-    <url>/2025/03/26/%E8%B8%A9%E5%9D%91-sqrt%E4%B8%8Ecbrt/</url>
+    <title>rCore 学习笔记 - 第四章</title>
+    <link href="/2025/04/09/rCore-0x04/"/>
+    <url>/2025/04/09/rCore-0x04/</url>
     
-    <content type="html"><![CDATA[<h2 id="引入">引入</h2><p>求一元三次方程的根的时候，要涉及求三次方根的问题，最开始我是这么写的：</p><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs cpp">u = std::<span class="hljs-built_in">pow</span>(-Q/<span class="hljs-number">2</span> + std::<span class="hljs-built_in">sqrt</span>(delta), <span class="hljs-number">1.f</span> / <span class="hljs-number">3</span>)<br></code></pre></td></tr></table></figure><p>结果发现出来一堆 <code>nan</code>。</p><h2 id="分析">分析</h2><p>参考 <a href="https://en.cppreference.com/w/cpp/numeric/math/cbrt">cppreference</a> 上面的介绍</p><blockquote><p>std::cbrt(num) is not equivalent to std::pow(num, 1.0 / 3) because the rational number 13 is typically not equal to 1.0 / 3 and std::pow cannot raise a negative base to a fractional exponent. Moreover, std::cbrt(num) usually gives more accurate results than std::pow(num, 1.0 / 3) (see example).</p></blockquote><p>（本想分析一下源代码的，后来发现 <code>libc++</code> 和 <code>libstdc++</code> 里面都直接 <code>__builtin_cbrt</code> 了，找了一圈找不到具体实现，于是作罢）</p><p>只能说还是要多看文档呀。</p><h2 id="解决">解决</h2><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs cpp">u = std::<span class="hljs-built_in">cbrt</span>(-Q/<span class="hljs-number">2</span> + std::<span class="hljs-built_in">sqrt</span>(delta))<br></code></pre></td></tr></table></figure>]]></content>
-    
-    
-    <categories>
-      
-      <category>笔记</category>
-      
-      <category>踩坑</category>
-      
-    </categories>
-    
-    
-    <tags>
-      
-      <tag>C++</tag>
-      
-    </tags>
-    
-  </entry>
-  
-  
-  
-  <entry>
-    <title>rCore 学习笔记 - 第三章</title>
-    <link href="/2025/03/01/rCore-0x03/"/>
-    <url>/2025/03/01/rCore-0x03/</url>
-    
-    <content type="html"><![CDATA[]]></content>
+    <content type="html"><![CDATA[<h2 id="分页内存管理">分页内存管理</h2><p>为了避免应用的恶意行为，以及方便应用的地址管理，内核要负责物理内存的管理，并提供一层抽象的接口，也就是地址空间。每个应用的视角下，它们各自拥有一大块独占的地址空间。应用使用虚拟地址来索引地址空间的数据，经过 MMU 映射到物理地址。</p><p>现在主流的机制是分页内存管理，将用户程序分成若干页面 (Page), 将物理地址分为若干个页帧 (Frame)，每个页面和页帧都有一个编号，通过页表 (Page Table) 建立映射关系。</p><p>分页机制的启用需要修改 <code>satp</code> 这个寄存器。对于 RISC-V 64，前四位是 <code>MODE</code>，用于指定页表实现方式，设为 0 的时候所有访存为物理地址，设为 8 的时候启用 Sv39 模式，这会启用三级页表，使用 39 位的虚拟地址，前 27 位分为 3 段，分别是各级页表的索引，最后 12 位是页内偏移，这个字段还可以设为别的值，启用别的模式，不过 rCore 的实现中似乎没用上；中间 16 位是 <code>ASID</code>，现在还用不上；后 44 位 <code>PPN</code> 是页表所在的物理页帧，由于每个页面大小是 4 KiB，每级页表占一个页面，所以大小也是 4 KiB，每项 8 B，总共可以存 512 个项，正好对应虚拟地址的其中 9 位。在采用 Sv39 分页模式的时候，实际上只有 39 位的地址是有效的。</p><p><code>FrameTracker</code> 可以看作对于裸页帧的 RAII 包装，而 <code>FRAME_ALLOCATOR</code> 负责管理页帧，当前的实现是 <code>StackFrameAllocator</code>，优先会从回收的页帧里进行重分配，不够了再利用预留的，注意这里返回的直接是物理地址。<code>PageTable</code> 是页表的具体实现，提供了将虚拟地址和物理地址映射 / 解除映射的功能。</p><p>当启用分页机制之后，连内核自己访问的地址，也变成了虚拟地址，如果不建立好映射关系，就会出现问题。教程中给出了一种方法——恒等映射：在开启分页之前先把一块区域的虚拟地址和物理地址建立恒等映射，这样在启用分页之后，对于内核来说，访问的虚拟地址就是物理地址了，不会受到分页的影响。</p><p><code>MapArea</code> 代表逻辑段，是一段连续地址的虚拟内存，一个程序的地址空间用 <code>MemorySet</code> 管理，<code>MemorySet</code> 包含了若干 <code>MapArea</code>，用 RAII 思想做内存管理，让 <code>MemorySet</code> 生命周期结束后，自动回收物理页帧。</p><p>有个地方让我感到奇怪，就是实际上 <code>MapArea</code> 在进行 <code>new</code> 时，只是对一些参数进行了设置，并没有实际建立虚拟地址和物理地址的映射关系，而是在 <code>MemorySet</code> 把它 <code>push</code> 进去的时候，再调用 <code>MapArea</code> 的 <code>map</code> 方法进行配置。我不太理解为什么要把这两个东西进行耦合。我觉得，<code>MapArea</code> 的 <code>map</code> 和 <code>unmap</code> 名字有误导性，实际上应当是应用设置好的操作。我的理解是，在这里，<code>MapArea</code> 只是一种区域信息的描述，实际上 <code>MemorySet</code> 是真正的管理者，而 <code>PageTable</code> 的细节被抽象掉了。而在硬件访问的时候，就无视高级语言做的这些设计了，直接根据页表的数据来做访问。不知道还有没有其他的考量。</p><p>之前的代码也要发生变化，比如 <code>trap.S</code> 里面。关键点在于换地址空间。进入 <code>__alltraps</code> 之后，先是把寄存器保存在 <code>TrapContext</code> 里，然后把应用初始化时期就设置好的，内核地址空间 token、trap handler 虚拟地址、内核栈顶地址等加载进寄存器，在 U 模式这些只是地址，没权限访问，<code>__alltraps</code> 把这些加载进寄存器之后，就可以调用 trap handler 来处理异常了。这个跳板页的设计很有意思，由于内核地址空间和用户地址空间不互通，切换地址空间后的那一刻，<code>pc</code> 简单地指向下一条指令，它是个虚拟地址，如果地址空间不能连续，那么这个地址就不知道指到哪里去了。为此，在用户地址空间的顶部，有一个跳板页，在内核地址空间的同样位置也有这样的跳板页，<code>trap.S</code> 就放在这页里面，它们都是一样映射的。这样，在跳板页中，可以确保指令的执行是连续的。</p><p>最后看一下内存结构。由于恒等映射，内核的虚拟地址就是物理地址。最上方是跳板页。接下来大片的空闲区域，在 <code>TASK_MANAGER</code> 初始化的时候，在这片区域一次性为所有用户程序创建好了内核栈。在创建每个内核栈的时候会将栈的区域进行映射，页帧的分配是交由 <code>FRAME_ALLOCATOR</code> 管理的，后续用户需要内存的时候，也是走的 <code>FRAME_ALLOCATOR</code>，而它已经把物理地址较高的区域分配给了程序的内核栈，所以不会出现重叠。<code>FRAME_ALLOCATOR</code> 管理的区域，从标记的内核区域截止位置 <code>ekernel</code> 到 <code>MEMORY_END</code>。<code>ekernel</code> 往下，就是运行前就决定的内核区域了。内核在 <code>.bss</code> 段里创建了内核堆和启动栈，<code>.bss</code> 段下方是 <code>.data</code>、<code>.rodata</code>、<code>.text</code> 等。用户程序的虚拟地址空间中，最上面的跳板页比较特殊，因为是和内核跳板页一样恒等映射的。它下面是 <code>TrapContext</code>，在创建任务的时候会记录下它的物理页号，在内核中就可以直接访问这个页号，对它的值进行更改。再往下就是用户程序自己定义的了，没什么需要解释的了，只需要知道，这些东西的物理地址，实际上位于从 <code>ekernel</code> 到最后一个内核栈最下方为止的这一片区域，由 <code>FRAME_ALLOCATOR</code> 进行统一管理。</p><h2 id="作业实现">作业实现</h2>]]></content>
     
     
     <categories>
@@ -56,6 +29,66 @@
       <tag>rCore</tag>
       
       <tag>操作系统</tag>
+      
+    </tags>
+    
+  </entry>
+  
+  
+  
+  <entry>
+    <title>rCore 学习笔记 - 第三章</title>
+    <link href="/2025/04/08/rCore-0x03/"/>
+    <url>/2025/04/08/rCore-0x03/</url>
+    
+    <content type="html"><![CDATA[<h2 id="上下文切换">上下文切换</h2><p>当前接触的上下文切换有三类：</p><ol><li>第一类是普通的函数调用，不需要平台或者系统提供什么特殊指令，实际上用户程序自己在用户栈上操作，操作系统不用管，这是编译器的事。操作系统只需要为用户程序准备好用户栈就可以了。</li><li>第二类是由于用户程序触发异常需要到内核处理导致的，需要利用硬件的机制，保存在进入内核进行处理前，应用的运行信息，涉及到到了特权级切换和换栈的问题。</li><li>第三类是这一章新增的，切换应用导致的，现在每个程序都有单独的用户栈和内核栈（可能是因为这样比较简单），这类上下文切换和第一类函数调用的唯一区别是换栈。</li></ol><h2 id="时钟中断">时钟中断</h2><p>RISC-V 的中断分为软件中断、时钟中断、外部中断三类，每类都有 Machine / Supervisor 两个版本。在 <code>mtime</code> 计数器到达 <code>mtimecmp</code> 之后就会触发一次时钟中断，时钟中断来自外部，不受处理器控制，所以对于 CPU 来说是「异步」的。</p><p>考虑中断前 CPU 特权级为 A，中断需要在特权级 B 中处理，关于中断是否被屏蔽，总结规则如下：</p><ol><li>B 高于 A，原有指令被抢占，Trap 到 B 中处理</li><li>B 等于 A，以内核的 S 特权级为例，如果不屏蔽中断，首先需要将 <code>sstatus.sie</code> 设为 1，接着按 <code>sie</code> 的三个字段 <code>ssie/stie/seie</code> 决定是否屏蔽软件中断 / 时钟中断 / 外部中断。</li><li>B 低于 A，中断被屏蔽。</li></ol><h2 id="作业实现">作业实现</h2><p>这次实验本身没什么难的，但因为我看的是 v3 的文档，测试代码用的是 2024A 的，有不少不一样的地方。比如 <code>sys_task_info</code> 的参数，那几个结构体的定义等。在新版的实现中似乎会让 <code>println!(&quot;string from task info test\n&quot;);</code> 做两次 <code>sys_write</code> 的调用，卡了好久才在评论区发现，这并不是我的问题。</p><p>还有一个需要留意的地方，记录一下 Debug 过程：刚开始实现记录系统调用次数的时候，发现 <code>assert!(3 &lt;= info.syscall_times[SYSCALL_GETTIMEOFDAY]);</code> 这里就爆了，打印发现值为 0. 我检查了一下代码的逻辑，没有发现问题。于是我在测试代码中完整打印了 <code>info.syscall_times</code>，发现个别地方是有值的。这就更奇怪了，明明有值，值只可能是内核里记录的，并且看数字大小也没什么问题。于是把有值的地方下标和值一起打印出来，发现了问题所在：下标比实际系统调用的 id 大了 1，也就是说有一个 <code>u32</code> 的偏移。我怀疑是系统调用的 id 写错了，检查后发现没问题，就算有问题也应当是个别偏移而不是整体偏移。我想，是不是 Rust 中 Option 的实现会带来内存布局的问题，想到内存布局问题，我就恍然大悟了。内核中在相关结构体定义时用了 <code>#[repr(C)]</code>，而测试代码那里是没有的。</p>]]></content>
+    
+    
+    <categories>
+      
+      <category>笔记</category>
+      
+      <category>rCore</category>
+      
+    </categories>
+    
+    
+    <tags>
+      
+      <tag>笔记</tag>
+      
+      <tag>Rust</tag>
+      
+      <tag>rCore</tag>
+      
+      <tag>操作系统</tag>
+      
+    </tags>
+    
+  </entry>
+  
+  
+  
+  <entry>
+    <title>[踩坑] std::pow 与 std::cbrt</title>
+    <link href="/2025/03/26/%E8%B8%A9%E5%9D%91-sqrt%E4%B8%8Ecbrt/"/>
+    <url>/2025/03/26/%E8%B8%A9%E5%9D%91-sqrt%E4%B8%8Ecbrt/</url>
+    
+    <content type="html"><![CDATA[<h2 id="引入">引入</h2><p>求一元三次方程的根的时候，要涉及求三次方根的问题，最开始我是这么写的：</p><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs cpp">u = std::<span class="hljs-built_in">pow</span>(-Q/<span class="hljs-number">2</span> + std::<span class="hljs-built_in">sqrt</span>(delta), <span class="hljs-number">1.f</span> / <span class="hljs-number">3</span>)<br></code></pre></td></tr></table></figure><p>结果发现出来一堆 <code>nan</code>。</p><h2 id="分析">分析</h2><p>参考 <a href="https://en.cppreference.com/w/cpp/numeric/math/cbrt">cppreference</a> 上面的介绍</p><blockquote><p>std::cbrt(num) is not equivalent to std::pow(num, 1.0 / 3) because the rational number 13 is typically not equal to 1.0 / 3 and std::pow cannot raise a negative base to a fractional exponent. Moreover, std::cbrt(num) usually gives more accurate results than std::pow(num, 1.0 / 3) (see example).</p></blockquote><p>（本想分析一下源代码的，后来发现 <code>libc++</code> 和 <code>libstdc++</code> 里面都直接 <code>__builtin_cbrt</code> 了，找了一圈找不到具体实现，于是作罢）</p><p>只能说还是要多看文档呀。</p><h2 id="解决">解决</h2><figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><code class="hljs cpp">u = std::<span class="hljs-built_in">cbrt</span>(-Q/<span class="hljs-number">2</span> + std::<span class="hljs-built_in">sqrt</span>(delta))<br></code></pre></td></tr></table></figure>]]></content>
+    
+    
+    <categories>
+      
+      <category>笔记</category>
+      
+      <category>踩坑</category>
+      
+    </categories>
+    
+    
+    <tags>
+      
+      <tag>C++</tag>
       
     </tags>
     
